@@ -11,6 +11,9 @@ library(httr)
 library(here)
 library(keyring)
 
+# Load functions
+source(here("code", "helpers.R"))
+
 # Set parameters
 username <- key_get("wta_username")
 password <- key_get("wta_password")
@@ -70,9 +73,7 @@ repeat {
   }
   
   # Delay
-  delay <- rnorm(1, 3, 1)
-  delay <- ifelse(delay <= 1, 3, delay)
-  Sys.sleep(delay)
+  wait()
   
 }
 
@@ -82,12 +83,13 @@ repeat {
 df_hikes <-
   tibble(html = list_hikes_all) %>%
   mutate(
-    class = map(html, ~ .x %>% html_attr("class")),
-    hike_name = map(html, ~ .x %>% html_attr("data-hikename")),
-    hike_url = map(html, ~ .x %>% html_attr("data-hikeurl")),
+    class = map_chr(html, ~ .x %>% html_attr("class")),
+    hike_name = map_chr(html, ~ .x %>% html_attr("data-hikename")),
+    hike_url = map_chr(html, ~ .x %>% html_node("a") %>% html_attr("href")),
     flag_hiked = class == "item hiked"
   ) %>%
-  select(hike_name, hike_url, flag_hiked)
+  select(hike_name, hike_url, flag_hiked) %>%
+  distinct()
 
 
 # Save dataframe
