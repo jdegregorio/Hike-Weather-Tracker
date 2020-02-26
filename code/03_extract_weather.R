@@ -17,7 +17,7 @@ library(here)
 source(here("code", "helpers.R"))
 
 # Load backpack hikes
-df_hikes <- read_rds(here("data", "df_hikes_backpack.rds"))
+df_hikes <- read_rds(here("data", "df_hikes.rds"))
 
 # Future trip report query to get urls
 # https://www.wta.org/go-hiking/hikes/mount-persis/@@related_tripreport_listing?b_start:int=0&b_size:int=1000
@@ -145,8 +145,3 @@ df_hikes$weather_url <- map(
     html_attr("href")
 )
 
-
-# SAVE DATA -------------------------------------------------------------------
-
-# Save hike data with info
-write_rds(df_hikes, here("data", "df_hikes_info.rds"))

@@ -93,4 +93,4 @@ df_hikes <-
 
 
 # Save dataframe
-write_rds(df_hikes, here("data", "df_hikes.rds"))
+write_rds(df_hikes, here("data", "df_hikes_backpack.rds"))
