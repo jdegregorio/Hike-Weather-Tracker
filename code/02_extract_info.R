@@ -32,7 +32,7 @@ list_html <- map(
 )
 
 # Temporary backup
-write_rds(df_hikes, "backup_df_hikes.rds")
+write_rds(list_html, "list_html.rds")
 
 # PARSE HIKE PAGE DETAILS -----------------------------------------------------
 
@@ -106,15 +106,42 @@ features_all <- map(
     html_attr("data-title")
 )
 
-tmp <- df_hikes %>%
+# Extract feature data
+df_features <- df_hikes %>%
   select(hike_name) %>%
   mutate(features = features_all, status = TRUE) %>%
   unnest(features) %>%
   pivot_wider(
     id_cols = hike_name,
     names_from = features,
+    names_prefix = "feature_",
     values_from = status,
-    values_fill = list("Old growth" = FALSE)
-  )
+    values_fill = list(status = FALSE)
+  ) %>%
+  rename_all(.funs = function(s) s %>% str_to_lower() %>% str_squish() %>% str_remove_all("[:space:]") %>% str_remove("/"))
 
-tmp
+# Join features to hike data
+df_hikes <- df_hikes %>% left_join(df_features, by = "hike_name")
+
+# Gather Latitude/Longitude
+latlong_all <- map(
+  list_html,
+  ~ .x %>%
+    html_nodes(".latlong") %>%
+    html_nodes("span") %>%
+    html_text()
+)
+
+# Extract latitude and longitude
+df_hikes$latitude <- map(latlong_all, 1) %>% as.numeric()
+df_hikes$longitude <- map(latlong_all, 2) %>% as.numeric()
+
+
+# Weather URL
+df_hikes$weather_url <- map(
+  list_html,
+  ~ .x %>%
+    html_nodes('a[href^="http://forecast.weather.gov/"]') %>%
+    html_attr("href")
+)
+
