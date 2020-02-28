@@ -3,6 +3,9 @@
 
 # SETUP -----------------------------------------------------------------------
 
+# Clear workspace
+rm(list = ls())
+
 # Load required package libraries
 library(tidyverse)
 library(lubridate)

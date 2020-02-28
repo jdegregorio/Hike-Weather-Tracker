@@ -1,10 +1,10 @@
-# The purpose of this script is to extract the hike information including the
-# following:
-#   - Basic stats
-#   - Location/Directions
-#   - Trip Reports
+# The purpose of this script is to extract the the weather forecast for each
+# hike.
 
 # SETUP -----------------------------------------------------------------------
+
+# Clear workspace
+rm(list = ls())
 
 # Load required package libraries
 library(tidyverse)
@@ -12,12 +12,13 @@ library(lubridate)
 library(rvest)
 library(httr)
 library(here)
+library(feather)
 
 # Load functions
 source(here("code", "helpers.R"))
 
 # Load backpack hikes
-df_hikes <- read_rds(here("data", "df_hikes.rds"))
+df_hikes <- read_rds(here("data", "df_hikes_info.rds"))
 
 # Future trip report query to get urls
 # https://www.wta.org/go-hiking/hikes/mount-persis/@@related_tripreport_listing?b_start:int=0&b_size:int=1000
@@ -27,121 +28,165 @@ df_hikes <- read_rds(here("data", "df_hikes.rds"))
 
 # Download HTML for hike pages
 list_html <- map(
-  df_hikes$hike_url,
+  df_hikes$weather_url,
   read_and_wait
 )
 
 # Temporary backup
-write_rds(list_html, "list_html.rds")
+write_rds(list_html, here("data", "list_weather_html.rds"))
 
-# PARSE HIKE PAGE DETAILS -----------------------------------------------------
 
-# Hike region
-df_hikes$region <- map(
+# PARSE WEATHER FORCAST SUMMARY -----------------------------------------------
+
+# Gather forecast data
+list_forecasts <- map(
   list_html,
-  ~ .x %>%
-    html_node("[id~=hike-region]") %>%
+  ~ .x %>% html_nodes(".forecast-tombstone")
+)
+
+# Parse forecast day/title
+list_title <- map(
+  list_forecasts,
+  ~ .x %>% 
+    html_node(".period-name") %>%
     html_text() %>%
     str_trim()
 )
 
-# Gather all hike stats
-stats_all <- map(
-  list_html,
-  ~ .x %>%
-    html_nodes(".hike-stat") %>%
+# Parse forecast text/detail
+list_text <- map(
+  list_forecasts,
+  ~ .x %>% 
+    html_node(".short-desc") %>%
     html_text() %>%
-    str_remove_all("\n") %>%
-    str_remove_all("\t") %>%
-    str_replace_all("\\s+", " ") %>%
     str_trim()
 )
 
-# Hike Location
-df_hikes$location <- stats_all %>%
-  map_chr(1) %>%
-  str_sub(10, -16)
-
-# Hike Length
-df_hikes$length <- stats_all %>%
-  map_chr(~paste0(.x, collapse = " ")) %>%
-  str_extract("(?<=Length )[:digit:]+.[:digit:](?= miles)") %>%
-  as.numeric()
-
-# Hike Length Type
-df_hikes$length_type <- stats_all %>%
-  map_chr(~paste0(.x, collapse = " ")) %>%
-  str_extract("roundtrip|one-way")
-
-# Elevation Gain
-df_hikes$elevation_gain <- stats_all %>%
-  map_chr(~paste0(.x, collapse = " ")) %>%
-  str_extract("(?<=Elevation Gain: )[:digit:]+(?= ft.)") %>%
-  as.numeric()
-
-# Highest Point
-df_hikes$highest_point <- stats_all %>%
-  map_chr(~paste0(.x, collapse = " ")) %>%
-  str_extract("(?<=Highest Point: )[:digit:]+(?= ft.)") %>%
-  as.numeric()
-
-# Rating
-df_hikes$rating <- stats_all %>%
-  map_chr(~paste0(.x, collapse = " ")) %>%
-  str_extract("[:digit:]{1}.[:digit:]{2}(?= out of 5)") %>%
-  as.numeric()
-
-# Review Count
-df_hikes$review_count <- stats_all %>%
-  map_chr(~paste0(.x, collapse = " ")) %>%
-  str_extract("[:digit:]+(?= votes)") %>%
-  as.numeric()
-
-
-# Gather all hike features
-features_all <- map(
-  list_html,
-  ~ .x %>%
-    html_nodes(".feature") %>%
-    html_attr("data-title")
+# Parse temp hi/lo
+list_temp <- map(
+  list_forecasts,
+  ~ .x %>% 
+    html_node(".temp") %>%
+    html_text() %>%
+    str_trim()
 )
 
-# Extract feature data
-df_features <- df_hikes %>%
-  select(hike_name) %>%
-  mutate(features = features_all, status = TRUE) %>%
-  unnest(features) %>%
-  pivot_wider(
-    id_cols = hike_name,
-    names_from = features,
-    names_prefix = "feature_",
-    values_from = status,
-    values_fill = list(status = FALSE)
-  ) %>%
-  rename_all(.funs = function(s) s %>% str_to_lower() %>% str_squish() %>% str_remove_all("[:space:]") %>% str_remove("/"))
+# Combine into a list of dataframes
+df_forecast_summary <- 
+  pmap(
+    list(list_title, list_text,list_temp),
+    ~ tibble(day = ..1, forecast = ..2, temp = ..3) %>%
+      filter(day %in% c("Friday", "Saturday", "Sunday")) %>%
+      pivot_wider(names_from = day, values_from = c(forecast, temp))
+  ) %>% 
+  bind_rows() %>%
+  rename_all(str_to_lower)
 
-# Join features to hike data
-df_hikes <- df_hikes %>% left_join(df_features, by = "hike_name")
+# Join to hike data
+df_hikes <- bind_cols(df_hikes, df_forecast_summary)
 
-# Gather Latitude/Longitude
-latlong_all <- map(
+# PARSE DETAILED WEATHER FORECAST----------------------------------------------
+
+# Gather forecast data
+list_forecasts <- map(
   list_html,
-  ~ .x %>%
-    html_nodes(".latlong") %>%
-    html_nodes("span") %>%
-    html_text()
+  ~ .x %>% html_nodes(".row-forecast")
 )
 
-# Extract latitude and longitude
-df_hikes$latitude <- map(latlong_all, 1) %>% as.numeric()
-df_hikes$longitude <- map(latlong_all, 2) %>% as.numeric()
-
-
-# Weather URL
-df_hikes$weather_url <- map(
-  list_html,
-  ~ .x %>%
-    html_nodes('a[href^="http://forecast.weather.gov/"]') %>%
-    html_attr("href")
+# Parse forecast day/title
+list_title <- map(
+  list_forecasts,
+  ~ .x %>% 
+    html_node("b") %>%
+    html_text() %>%
+    str_trim()
 )
 
+# Parse forecast text/detail
+list_text <- map(
+  list_forecasts,
+  ~ .x %>% 
+    html_node(".forecast-text") %>%
+    html_text() %>%
+    str_trim()
+)
+
+# Combine into a list of dataframes
+df_forecast_detailed <- 
+  map2(
+    list_title,
+    list_text,
+    ~ tibble(day = .x, forecast = .y) %>%
+      filter(day %in% c("Friday", "Saturday", "Sunday")) %>%
+      pivot_wider(names_from = day, names_prefix = "forecast_detail_", values_from = forecast)
+  ) %>% 
+  bind_rows() %>%
+  rename_all(str_to_lower)
+
+# Join with hike data
+df_hikes <- bind_cols(df_hikes, df_forecast_detailed)
+
+
+# SAVE DATA -------------------------------------------------------------------
+
+# Save hike data with info
+write_rds(df_hikes, here("data", "df_hikes_weather.rds"))
+
+# DEVELOPMENT -----------------------------------------------------------------
+
+# # GENERATE WEATHER URL ------------------------------------------------------
+# 
+# df_hikes <- df_hikes %>%
+#   mutate(
+#     weather_url = paste0(
+#       "https://forecast.weather.gov/MapClick.php?lat=", latitude,
+#       "&lon=", longitude,
+#       "&FcstType=digitalDWML"
+#     )
+#   )
+
+# # PARSE HOURLY FORECAST -------------------------------------------------------
+# 
+# # Date/Time
+# datetime_all <- map(
+#   list_html,
+#   ~ .x %>%
+#     xml_nodes("start-valid-time") %>% 
+#     xml_text() %>% 
+#     as_datetime(tz = "US/Pacific")
+# )
+# 
+# # Hourly Temp
+# temp_all <- map(
+#   list_html,
+#   ~ .x %>%
+#     xml_nodes('temperature[type="hourly"]') %>% 
+#     xml_nodes("value") %>%
+#     xml_text() %>%
+#     as.numeric()
+# )
+# 
+# # Percipitation %
+# percip_pct_all <- map(
+#   list_html,
+#   ~ .x %>%
+#     xml_nodes("probability-of-precipitation") %>% 
+#     xml_nodes("value") %>%
+#     xml_text() %>%
+#     as.numeric()
+# )
+# 
+# # Cloud Cover
+# cloudcover_all <- map(
+#   list_html,
+#   ~ .x %>%
+#     xml_nodes("cloud-amount") %>% 
+#     xml_nodes("value") %>%
+#     xml_text() %>%
+#     as.numeric()
+# )
+# 
+# # Weather
+# list_html[[1]] %>%
+#   xml_nodes("weather-conditions") %>%
+#   map(~ .x %>% xml_nodes("value"))

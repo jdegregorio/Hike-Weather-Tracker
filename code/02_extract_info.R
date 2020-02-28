@@ -6,6 +6,9 @@
 
 # SETUP -----------------------------------------------------------------------
 
+# Clear workspace
+rm(list = ls())
+
 # Load required package libraries
 library(tidyverse)
 library(lubridate)
@@ -19,9 +22,6 @@ source(here("code", "helpers.R"))
 # Load backpack hikes
 df_hikes <- read_rds(here("data", "df_hikes_backpack.rds"))
 
-# Future trip report query to get urls
-# https://www.wta.org/go-hiking/hikes/mount-persis/@@related_tripreport_listing?b_start:int=0&b_size:int=1000
-
 
 # DOWNLOAD HTML FOR BACKPACK HIKE PAGES ---------------------------------------
 
@@ -31,13 +31,13 @@ list_html <- map(
   read_and_wait
 )
 
-# Temporary backup
-write_rds(list_html, "list_html.rds")
+# Create backup of hike page html
+write_rds(list_html, here("data", "list_hike_html.rds"))
 
 # PARSE HIKE PAGE DETAILS -----------------------------------------------------
 
 # Hike region
-df_hikes$region <- map(
+df_hikes$region <- map_chr(
   list_html,
   ~ .x %>%
     html_node("[id~=hike-region]") %>%
@@ -133,12 +133,12 @@ latlong_all <- map(
 )
 
 # Extract latitude and longitude
-df_hikes$latitude <- map(latlong_all, 1) %>% as.numeric()
-df_hikes$longitude <- map(latlong_all, 2) %>% as.numeric()
+df_hikes$latitude <- map_chr(latlong_all, 1) %>% as.numeric()
+df_hikes$longitude <- map_chr(latlong_all, 2) %>% as.numeric()
 
 
 # Weather URL
-df_hikes$weather_url <- map(
+df_hikes$weather_url <- map_chr(
   list_html,
   ~ .x %>%
     html_nodes('a[href^="http://forecast.weather.gov/"]') %>%
