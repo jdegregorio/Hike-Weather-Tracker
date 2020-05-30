@@ -12,7 +12,6 @@ library(lubridate)
 library(rvest)
 library(httr)
 library(here)
-library(feather)
 
 # Load functions
 source(here("code", "helpers.R"))
@@ -24,7 +23,7 @@ df_hikes <- read_rds(here("data", "df_hikes_info.rds"))
 # https://www.wta.org/go-hiking/hikes/mount-persis/@@related_tripreport_listing?b_start:int=0&b_size:int=1000
 
 
-# DOWNLOAD HTML FOR BACKPACK HIKE PAGES ---------------------------------------
+# DOWNLOAD WEATHER HTML FOR HIKES ---------------------------------------------
 
 # Download HTML for hike pages
 list_html <- map(
@@ -76,7 +75,7 @@ df_forecast_summary <-
   pmap(
     list(list_title, list_text,list_temp),
     ~ tibble(day = ..1, forecast = ..2, temp = ..3) %>%
-      filter(day %in% c("Friday", "Saturday", "Sunday")) %>%
+      filter(day %in% c("Today", "Friday", "Saturday", "Sunday")) %>%
       pivot_wider(names_from = day, values_from = c(forecast, temp))
   ) %>% 
   bind_rows() %>%

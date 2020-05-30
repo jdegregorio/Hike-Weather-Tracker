@@ -89,11 +89,11 @@ df_hikes <-
     class = map_chr(html, ~ .x %>% html_attr("class")),
     hike_name = map_chr(html, ~ .x %>% html_attr("data-hikename")),
     hike_url = map_chr(html, ~ .x %>% html_node("a") %>% html_attr("href")),
+    hike_id = str_split(hike_url, "/") %>% map_chr(last),
     flag_hiked = class == "item hiked"
   ) %>%
-  select(hike_name, hike_url, flag_hiked) %>%
+  select(hike_name, hike_id, hike_url, flag_hiked) %>%
   distinct()
-
 
 # Save dataframe
 write_rds(df_hikes, here("data", "df_hikes_backpack.rds"))
